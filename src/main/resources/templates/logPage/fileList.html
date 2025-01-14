@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>文件浏览器</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+      cursor: pointer;
+    }
+    a {
+      text-decoration: none;
+      color: #007BFF;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .no-preview {
+      color: #888;
+      cursor: not-allowed;
+    }
+    .no-preview:hover {
+      text-decoration: none;
+    }
+
+    .sort-icon.asc::before {
+      content: '▲'; /* 上箭头 */
+    }
+    .sort-icon.desc::before {
+        content: '▼'; /* 下箭头 */
+    }
+
+  </style>
+</head>
+<body>
+<h1>文件浏览器</h1>
+<form id="searchForm">
+  <input type="text" id="searchName" placeholder="文件/目录名">
+  <input type="text" id="searchType" placeholder="文件类型">
+  <input type="text" id="searchSize" placeholder="文件大小">
+  <input type="date" id="searchDate" placeholder="最后修改时间">
+  <button type="button" onclick="applyFilters()">搜索</button>
+</form>
+<div>
+  <a th:href="@{/logs/file-list(path=${parentPath})}"  th:if="${parentPath != currentPath}">返回上一级</a>
+</div>
+<p>根目录: <a th:text="${rootPath}"></a></p>
+<p>当前目录: <a th:text="${currentPath}"></a></p>
+<p>上级目录: <a th:text="${parentPath}"></a></p>
+<table>
+  <thead>
+    <tr>
+      <th>
+        类型
+        <span class="sort-icon" data-sort="fileType">&#8593;</span>
+      </th>
+      <th>
+        文件名
+        <span class="sort-icon" data-sort="name">&#8593;</span>
+      </th>
+      <th>
+        大小
+        <span class="sort-icon" data-sort="size">&#8593;</span>
+      </th>
+      <th>
+        最后修改时间
+        <span class="sort-icon" data-sort="lastModifiedTime">&#8593;</span>
+      </th>
+      <th>
+        所有者
+        <span class="sort-icon" data-sort="owner">&#8593;</span>
+      </th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr th:each="fileEntry, iterStat : ${fileList}">
+      <td th:text="${fileEntry.fileType}"></td>
+      <td>
+        <a th:href="@{/file/file-list(path=${fileEntry.filepath})}" th:text="${fileEntry.name}" th:if="${fileEntry.isDirectory}"></a>
+        <span th:text="${fileEntry.name}" th:if="${!fileEntry.isDirectory}"></span>
+      </td>
+      <td th:text="${fileEntry.size}"></td>
+      <td th:text="${fileEntry.lastModifiedTime}"></td>
+      <td th:text="${fileEntry.owner}"></td>
+      <td>
+        <a th:href="@{/file/viewLog(filename=${fileEntry.filepath})}" target="_blank" th:if="${!fileEntry.isDirectory and previewExtensions.contains(fileEntry.extension)}">预览</a>
+        <span th:class="${!fileEntry.isDirectory and !previewExtensions.contains(fileEntry.extension) ? 'no-preview' : ''}" th:if="${!fileEntry.isDirectory and !previewExtensions.contains(fileEntry.extension)}">预览</span>
+        <a th:href="@{/file/download(filename=${fileEntry.filepath})}" th:if="${!fileEntry.isDirectory}">下载</a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<script>
+    function applyFilters() {
+        var typeFilter = document.getElementById('searchType').value.toLowerCase();
+        var nameFilter = document.getElementById('searchName').value.toLowerCase();
+        var sizeFilter = document.getElementById('searchSize').value.toLowerCase();
+        var dateFilter = document.getElementById('searchDate').value;
+
+         var rows = Array.from(document.querySelectorAll('tbody tr'));
+
+        rows.forEach(row => {
+            var typeCell = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
+            var nameCell = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+            var sizeCell = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+            var dateCell = row.querySelector('td:nth-child(4)').textContent;
+
+            var nameMatch = nameCell.includes(nameFilter);
+            var typeMatch = typeCell.includes(typeFilter);
+            var sizeMatch = sizeCell.includes(sizeFilter);
+            var dateMatch = dateFilter === '' || dateCell.startsWith(dateFilter);
+
+            if (nameMatch && typeMatch && sizeMatch && dateMatch) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var table = document.querySelector('table');
+    var headers = table.querySelectorAll('th');
+    var tableBody = table.querySelector('tbody');
+    var rows = Array.from(tableBody.querySelectorAll('tr'));
+
+    var currentSort = {
+        key: null,
+        direction: 'asc'
+    };
+
+    headers.forEach(header => {
+        header.addEventListener('click', function() {
+            var sortKey = this.querySelector('.sort-icon').getAttribute('data-sort');
+            if (sortKey) {
+                sortTable(sortKey);
+            }
+        });
+    });
+
+    function sortTable(key) {
+        if (currentSort.key === key) {
+            currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort.key = key;
+            currentSort.direction = 'asc';
+        }
+
+        rows.sort((a, b) => {
+            var aValue = a.querySelector(`td:nth-child(${getColIndex(key)})`).textContent.trim();
+            var bValue = b.querySelector(`td:nth-child(${getColIndex(key)})`).textContent.trim();
+
+            if (key === 'size') {
+                aValue = parseFileSize(aValue);
+                bValue = parseFileSize(bValue);
+            } else if (key === 'lastModifiedTime') {
+                aValue = new Date(aValue);
+                bValue = new Date(bValue);
+            }
+
+            if (aValue < bValue) return currentSort.direction === 'asc' ? -1 : 1;
+            if (aValue > bValue) return currentSort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        rows.forEach(row => tableBody.appendChild(row));
+
+        headers.forEach(header => {
+            var sortIcon = header.querySelector('.sort-icon');
+            sortIcon.className = 'sort-icon';
+        });
+
+        var currentHeader = headers[getHeaderIndex(key)];
+        var sortIcon = currentHeader.querySelector('.sort-icon');
+        sortIcon.className = `sort-icon ${currentSort.direction}`;
+    }
+
+    function getColIndex(key) {
+        switch (key) {
+            case 'fileType': return 1;
+            case 'name': return 2;
+            case 'size': return 3;
+            case 'lastModifiedTime': return 4;
+            case 'owner': return 5;
+            default: return 0;
+        }
+    }
+
+    function getHeaderIndex(key) {
+        switch (key) {
+            case 'fileType': return 0;
+            case 'name': return 1;
+            case 'size': return 2;
+            case 'lastModifiedTime': return 3;
+            case 'owner': return 4;
+            default: return 0;
+        }
+    }
+
+    function parseFileSize(sizeStr) {
+        const units = {
+            'B': 1,
+            'KB': 1024,
+            'MB': 1024 * 1024,
+            'GB': 1024 * 1024 * 1024,
+            'K': 1024,
+            'M': 1024 * 1024,
+            'G': 1024 * 1024 * 1024
+        };
+
+        sizeStr = sizeStr.trim().toUpperCase();
+
+        for (let unit in units) {
+            if (sizeStr.endsWith(unit)) {
+                const value = parseFloat(sizeStr.slice(0, -unit.length));
+                if (!isNaN(value)) {
+                    return value * units[unit];
+                }
+            }
+        }
+
+        const value = parseFloat(sizeStr);
+        return isNaN(value) ? 0 : value;
+    }
+});
+
+</script>
+</body>
+</html>

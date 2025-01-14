@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>Log Viewer</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <style>
+        .log-container {
+            display: flex;
+        }
+        .line-numbers {
+            user-select: none;
+            color: #888;
+            margin-right: 10px;
+            white-space: pre;
+        }
+        .log-content {
+            white-space: pre-wrap; /* 保留空白符并自动换行 */
+        }
+        .download-button {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<h1>filename: <span th:text="${filename}" id="filename">Filename------</span></h1>
+<h1>ognFilename: <span th:text="${ognFilename}" id="ognFilename">ognFilename------</span></h1>
+<div class="log-container" id="log-container">
+  <pre class="line-numbers" id="line-numbers"></pre>
+  <pre class="log-content" id="log-content"></pre>
+  <div class="md-content" id="md-content"></div>
+</div>
+
+<script>
+        // 从 Thymeleaf 模板中获取 filename
+        var enFilename = $('#filename').text();
+        var filename = $('#ognFilename').text();
+
+        // 构建包含查询参数的 URL
+        var url = '/ylist/file/view?filename=' + enFilename;
+        var mdFlag = isMarkdown(filename);
+        var logContent = mdFlag ? document.getElementById('md-content') : document.getElementById('log-content');
+
+        // 使用 AJAX 请求获取流式日志内容
+        count = 0;
+        $.ajax({
+            url: url,
+            xhrFields: {
+                onprogress: function(e) {
+                    var lineNumbers = document.getElementById('line-numbers');
+                    if (e.lengthComputable) {
+                        var chunk = e.target.response.substr(logContent.innerHTML.length);
+                        var parsedChunk = mdFlag ? marked.parse(chunk) : escapeHtml(chunk);
+                        logContent.innerHTML = cleanMarkdown(parsedChunk);
+                    } else {
+                        var parsedResponse = mdFlag ? marked.parse(e.target.response) : escapeHtml(e.target.response);
+                        logContent.innerHTML = cleanMarkdown(parsedResponse);
+                    }
+                    updateLineNumbers(logContent);
+                }
+            },
+            success: function(data) {
+                console.log("Log streaming complete");
+                // 在完成时再次更新行号以确保正确性
+                updateLineNumbers(logContent);
+            },
+            error: function(err) {
+                console.error("Log streaming failed:", err);
+            }
+        });
+
+        // 判断文件是否为 Markdown 格式
+        function isMarkdown(filename) {
+            return filename.toLowerCase().endsWith('.md') || filename.toLowerCase().endsWith('.markdown');
+        }
+
+        // 清理 Markdown 内容中的多余空行
+        function cleanMarkdown(content) {
+            // 使用正则表达式去除连续的空行
+            return content.replace(/(\n\s*\n)/g, '\n\n').trim();
+        }
+
+        // 更新行号
+        function updateLineNumbers(logContent) {
+            // 过滤空行：在 updateLineNumbers 函数中，使用 filter(line => line.trim() !== '') 来过滤掉由换行符引起的空行。
+            // 这样可以确保行号只对应实际有内容的行。
+            // 行号更新：行号的生成基于过滤后的非空行，确保行号与实际内容对齐。
+            console.log("logContent--"+logContent.innerHTML);
+
+            var lines = logContent.innerHTML.split('\n');
+            var lineNumbers = lines.map((_, index) => index + 1).join('\n');
+            console.log("lineNumbers--"+lineNumbers);
+            document.getElementById('line-numbers').textContent = lineNumbers;
+        }
+
+        // 转义 HTML 特殊字符
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
